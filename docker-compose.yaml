@@ -1,0 +1,36 @@
+version: '3.12'
+
+services:
+  file-postgres-db:
+    image: postgres:latest
+    container_name: db_for_file
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data_file:/var/lib/postgresql/data
+
+  todo_file:
+    build:
+      context: .
+    ports:
+      - "8001:8000"
+    depends_on:
+      - file-postgres-db
+    environment:
+      DEBUG: ${DEBUG}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db_for_file
+      DB_PORT: ${DB_PORT}
+      PYTHONUNBUFFERED: 1
+    entrypoint:
+      - ./entrypoint.sh
+
+
+volumes:
+  pg_data_file:
