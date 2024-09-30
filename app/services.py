@@ -1,6 +1,4 @@
-import asyncio
 import json
-import random
 import uuid
 from urllib.parse import urlparse
 
@@ -52,7 +50,9 @@ class FileService:
         file_key = parsed_url.path.split("/")[-1]
         return file_key
 
-    async def upload_file(self, file: UploadFile, category: str, related_id: int):
+    async def upload_file(
+        self, file: UploadFile, category: str, related_id: int
+    ) -> str:
         self._validate_category(category)
         bucket_name = self._get_bucket_name(category)
 
@@ -60,44 +60,66 @@ class FileService:
 
         file_key = str(uuid.uuid4())
         await self.s3_client.upload_fileobj(file.file, bucket_name, file_key)
-        await self.file_dal.create_file(
+        new_file = await self.file_dal.create_file(
             file_key=file_key, related_type=category, related_id=related_id
         )
+
+        file_url = await self._generate_presigned_url(bucket_name, file_key)
+        redis = await redis_client.get_redis()
+
+        combined_key = (
+            f"{category}:{related_id}:{new_file.file_pk}"
+            if category == "task_attachment"
+            else f"{category}:{related_id}"
+        )
+        await redis.set(
+            combined_key, json.dumps(file_url), ex=settings.link_expiration_time
+        )
+        return file_url
 
     async def get_file_urls(self, category: str, related_id: int) -> list[str] | str:
         self._validate_category(category)
         bucket_name = self._get_bucket_name(category)
-
-        combined_key = f"{category}:{related_id}"
-
         redis = await redis_client.get_redis()
-        cached_data = await redis.get(combined_key)
 
-        if cached_data:
-            return json.loads(cached_data)
-
-        file_keys = await self.file_dal.get_file_keys_by_related_type_and_id(
+        files = await self.file_dal.get_files_by_related_type_and_id(
             related_type=category, related_id=related_id
         )
-        if file_keys is None:
-            raise ValueError("No files found")
+        if files is None:
+            return []
 
         if category == "task_attachment":
-            files_urls = await asyncio.gather(
-                *[
-                    self._generate_presigned_url(bucket_name, file_key)
-                    for file_key in file_keys
-                ]
-            )
-            await redis.set(
-                combined_key, json.dumps(files_urls), ex=settings.link_expiration_time
-            )
-            return files_urls
+            cached_data = []
+            for file in files:
+                combined_key = f"{category}:{related_id}:{file.file_pk}"
+                cached_attachment = await redis.get(combined_key)
+                if not cached_attachment:
+                    file_url = await self._generate_presigned_url(
+                        bucket_name, file.file_key
+                    )
+                    await redis.set(
+                        combined_key,
+                        json.dumps(file_url),
+                        ex=settings.link_expiration_time,
+                    )
+                    cached_data.append(file_url)
+                cached_data.append(json.loads(cached_attachment))
+
+            return cached_data
         else:
-            file_url = await self._generate_presigned_url(bucket_name, file_keys[0])
+            combined_key = f"{category}:{related_id}"
+            cached_data = await redis.get(combined_key)
+            if cached_data:
+                return json.loads(cached_data)
+
+            file_url = await self._generate_presigned_url(
+                bucket_name, files[0].file_key
+            )
+
             await redis.set(
                 combined_key, json.dumps(file_url), ex=settings.link_expiration_time
             )
+
             return file_url
 
     async def update_file(self, file: UploadFile, category: str, url: str):
@@ -114,3 +136,12 @@ class FileService:
 
         await self.s3_client.delete_object(Bucket=bucket_name, Key=file_key)
         await self.file_dal.delete_file(file_key)
+
+        redis = await redis_client.get_redis()
+        file = await self.file_dal.get_file_by_file_key(file_key)
+        combined_key = (
+            f"{category}:{file.related_id}:{file.file_pk}"
+            if category == "task_attachment"
+            else f"{category}:{file.related_id}"
+        )
+        await redis.delete(combined_key)
