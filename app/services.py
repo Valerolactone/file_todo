@@ -6,6 +6,7 @@ from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from databases.dals import FileDAL
+from databases.models import File
 from databases.redis_client import redis_client
 from databases.s3_client import S3Client
 from settings import settings
@@ -50,6 +51,17 @@ class FileService:
         file_key = parsed_url.path.split("/")[-1]
         return file_key
 
+    async def _get_related_files(self, category: str, related_id: int) -> list[File]:
+        self._validate_category(category)
+
+        files = await self.file_dal.get_files_by_related_type_and_id(
+            related_type=category, related_id=related_id
+        )
+        if files is None:
+            raise ValueError("No file found.")
+
+        return files
+
     async def upload_file(
         self, file: UploadFile, category: str, related_id: int
     ) -> str:
@@ -59,7 +71,11 @@ class FileService:
         await self._ensure_bucket_exists(bucket_name)
 
         file_key = str(uuid.uuid4())
-        await self.s3_client.upload_fileobj(file.file, bucket_name, file_key)
+        try:
+            await self.s3_client.upload_fileobj(file.file, bucket_name, file_key)
+        except Exception as e:
+            raise ValueError(f"Failed to upload file to S3: {str(e)}")
+
         new_file = await self.file_dal.create_file(
             file_key=file_key, related_type=category, related_id=related_id
         )
@@ -77,50 +93,46 @@ class FileService:
         )
         return file_url
 
-    async def get_file_urls(self, category: str, related_id: int) -> list[str] | str:
-        self._validate_category(category)
+    async def get_task_attachments(self, related_id: int, category: str) -> list[str]:
+        files = await self._get_related_files(category=category, related_id=related_id)
         bucket_name = self._get_bucket_name(category)
         redis = await redis_client.get_redis()
 
-        files = await self.file_dal.get_files_by_related_type_and_id(
-            related_type=category, related_id=related_id
+        cached_data = []
+        for file in files:
+            combined_key = f"{category}:{related_id}:{file.file_pk}"
+            cached_attachment = await redis.get(combined_key)
+            if not cached_attachment:
+                file_url = await self._generate_presigned_url(
+                    bucket_name, file.file_key
+                )
+                await redis.set(
+                    combined_key,
+                    json.dumps(file_url),
+                    ex=settings.link_expiration_time,
+                )
+                cached_data.append(file_url)
+            cached_data.append(json.loads(cached_attachment))
+
+        return cached_data
+
+    async def get_file_url(self, category: str, related_id: int) -> str:
+        redis = await redis_client.get_redis()
+
+        combined_key = f"{category}:{related_id}"
+        cached_data = await redis.get(combined_key)
+        if cached_data:
+            return json.loads(cached_data)
+
+        file = await self._get_related_files(category=category, related_id=related_id)
+        bucket_name = self._get_bucket_name(category)
+        file_url = await self._generate_presigned_url(bucket_name, file[0].file_key)
+
+        await redis.set(
+            combined_key, json.dumps(file_url), ex=settings.link_expiration_time
         )
-        if files is None:
-            return []
 
-        if category == "task_attachment":
-            cached_data = []
-            for file in files:
-                combined_key = f"{category}:{related_id}:{file.file_pk}"
-                cached_attachment = await redis.get(combined_key)
-                if not cached_attachment:
-                    file_url = await self._generate_presigned_url(
-                        bucket_name, file.file_key
-                    )
-                    await redis.set(
-                        combined_key,
-                        json.dumps(file_url),
-                        ex=settings.link_expiration_time,
-                    )
-                    cached_data.append(file_url)
-                cached_data.append(json.loads(cached_attachment))
-
-            return cached_data
-        else:
-            combined_key = f"{category}:{related_id}"
-            cached_data = await redis.get(combined_key)
-            if cached_data:
-                return json.loads(cached_data)
-
-            file_url = await self._generate_presigned_url(
-                bucket_name, files[0].file_key
-            )
-
-            await redis.set(
-                combined_key, json.dumps(file_url), ex=settings.link_expiration_time
-            )
-
-            return file_url
+        return file_url
 
     async def update_file(self, file: UploadFile, category: str, url: str):
         self._validate_category(category)

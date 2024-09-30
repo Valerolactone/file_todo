@@ -1,5 +1,3 @@
-from typing import Union
-
 from pydantic import BaseModel, ConfigDict
 
 
@@ -8,4 +6,13 @@ class TunedModel(BaseModel):
 
 
 class Urls(TunedModel):
-    urls: Union[str, list[str]]
+    urls: list[str]
+
+
+class Url(TunedModel):
+    file_url: str
+
+
+class DeleteFile(BaseModel):
+    category: str
+    url: str
