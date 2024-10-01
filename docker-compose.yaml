@@ -1,36 +1,60 @@
 version: '3.12'
 
 services:
-  file-postgres-db:
-    image: postgres:latest
-    container_name: db_for_file
+  minio:
+    image: minio/minio
+    container_name: file_todo_minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
     environment:
-      POSTGRES_DB: ${DB_NAME}
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_KEY}
+    command: server /data
+    volumes:
+      - minio_data:/data
+
+  postgres:
+    image: postgres:latest
+    container_name: file_todo_postgres
+    ports:
+      - "${DB_PORT}:5432"
+    environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "5433:5432"
+      POSTGRES_DB: ${DB_NAME}
     volumes:
-      - pg_data_file:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:latest
+    container_name: file_todo_redis
+    ports:
+      - "${REDIS_PORT}:6379"
 
   todo_file:
     build:
       context: .
     ports:
-      - "8001:8000"
+      - "8003:8000"
     depends_on:
-      - file-postgres-db
+      - minio
+      - postgres
+      - redis
     environment:
       DEBUG: ${DEBUG}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: db_for_file
+      DB_HOST: file_todo_postgres
       DB_PORT: ${DB_PORT}
+      REDIS_HOST: file_todo_redis
+      REDIS_PORT: 6379
       PYTHONUNBUFFERED: 1
     entrypoint:
       - ./entrypoint.sh
 
 
 volumes:
-  pg_data_file:
+  minio_data:
+  postgres_data:
