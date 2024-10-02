@@ -48,8 +48,6 @@ jobs:
       - name: Checkout branch
         uses: actions/checkout@v4
 
-
-
       - name: Create .env file
         run: |
           echo "DB_USER=${{ secrets.DB_USER }}" >> .env
@@ -72,7 +70,7 @@ jobs:
           python-version: 3.12
 
       - name: Install poetry
-        uses: |
+        run: |
           curl -sSL https://install.python-poetry.org | python3 -
           echo "${HOME}/.local/bin" >> $GITHUB_PATH
 
