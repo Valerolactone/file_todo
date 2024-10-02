@@ -48,6 +48,8 @@ jobs:
       - name: Checkout branch
         uses: actions/checkout@v4
 
+
+
       - name: Create .env file
         run: |
           echo "DB_USER=${{ secrets.DB_USER }}" >> .env
