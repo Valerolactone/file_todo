@@ -10,60 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:latest
-        env:
-          POSTGRES_DB: ${{ secrets.DB_USER }}
-          POSTGRES_USER: ${{ secrets.DB_PASSWORD }}
-          POSTGRES_PASSWORD: ${{ secrets.DB_NAME }}
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U your_db_user"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:latest
-        ports:
-          - 6379:6379
-
-      minio:
-        image: minio/minio:latest
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
-          MINIO_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
-        options: >-
-          --entrypoint /usr/bin/minio 
-          server /data
-          --health-cmd "curl --silent --fail http://localhost:9000/minio/health/live"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout branch
         uses: actions/checkout@v4
-
-      - name: Create .env file
-        run: |
-          echo "DB_USER=${{ secrets.DB_USER }}" >> .env
-          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
-          echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
-          echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
-          echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
-
-          echo "AWS_S3_ENDPOINT=${{ secrets.AWS_S3_ENDPOINT }}" >> .env
-          echo "AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}" >> .env
-          echo "AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}" >> .env
-          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> .env
-          echo "LINK_EXPIRATION_TIME=${{ secrets.LINK_EXPIRATION_TIME }}" >> .env
-          
-          echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
 
       - name: Set up Python
         uses: actions/setup-python@v5
