@@ -2,23 +2,50 @@ name: Run tests
 
 on:
   push:
-    branches: [ "develop", 'github-actions']
+    branches: [ "develop" ]
   pull_request:
     branches: [ "develop" ]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Checkout branch
-      uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: 3.12
-    - name: Install poetry
-      uses: abatilo/actions-poetry@v2
-    - name: Install dependencies
-      run: poetry install
-    - name: Test with pytest
-      run: poetry run pytest tests/
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Create .env file
+        run: |
+          echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+          echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
+          echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+          echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+
+          echo "AWS_S3_ENDPOINT=${{ secrets.AWS_S3_ENDPOINT }}" >> .env
+          echo "AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}" >> .env
+          echo "AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}" >> .env
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> .env
+          echo "LINK_EXPIRATION_TIME=${{ secrets.LINK_EXPIRATION_TIME }}" >> .env
+          
+          echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+
+      - name: Install poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          poetry install
+
+      - name: Run tests
+        run: |
+          poetry run pytest tests/
+        env:
+          ENV_FILE: .env

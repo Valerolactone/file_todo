@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     debug: bool = Field(False, env="DEBUG")
 
     allowed_categories: set[str] = Field(
-        {"user_photo", "project_logo", "task_attachment"}, env="ALLOWED_CATEGORIES"
+        {"user-photo", "project-logo", "task-attachment"}, env="ALLOWED_CATEGORIES"
     )
 
     model_config = SettingsConfigDict(env_file="./.env")

@@ -11,8 +11,3 @@ class Urls(TunedModel):
 
 class Url(TunedModel):
     file_url: str
-
-
-class DeleteFile(BaseModel):
-    category: str
-    url: str
